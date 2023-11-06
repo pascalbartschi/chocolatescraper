@@ -1,5 +1,6 @@
 # Teaching myself webscraping
-Application of webscraping with scrapy library
+
+Application of webscraping with scrapy library with [THE SCRAPY PLAYBOOK](https://thepythonscrapyplaybook.com/) of the site https://www.chocolate.co.uk/collections/all.
 
 ## 1. Basics
 
@@ -259,6 +260,168 @@ ITEM_PIPELINES = {
 
 
 The integer values you assign to classes in this setting determine the order in which they run. Items go through from lower valued to higher valued classes. It’s customary to define these numbers in the 0-1000 range.
+
+## 3. Storing Data
+
+### Saving to JSON or csv
+
+```shell
+# relative
+scrapy crawl chocolatespider -o my_scraped_chocolate_data.json
+# absolute
+scrapy crawl chocolatespider -O file:///path/to/my/project/my_scraped_chocolate_data.json:json
+```
+
+Using the crawl or runspider commands, you can use the `-O` option instead of `-o` to overwrite the output file
+
+### Saving the Data to Amazon S3 / SQL
+
+Not needed so far, but consult [this link](https://thepythonscrapyplaybook.com/scrapy-beginners-guide-storing-data) for future use.
+
+
+## 4. User Agents and Proxies
+
+### Using User Agents when scraping
+
+**User Agents** are strings that let the website you are scraping identify the application, operating system (OSX/Windows/Linux), browser (Chrome/Firefox/Internet Explorer), etc. of the user sending a request to their website. They are sent to the server as part of the request headers.
+
+Our default user agent is
+
+```py
+Scrapy/VERSION (+https://scrapy.org)
+```
+
+We can use middleware to obtain changing agents from this [middleware](https://github.com/rejoiceinhope/crawler-demo/tree/master/crawling-basic/scrapy_user_agents)
+
+We add it to your projects `settings.py` file, and disable Scrapy's default UserAgentMiddleware by setting its value to `None`:
+
+ ```python
+DOWNLOADER_MIDDLEWARES = {
+    'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
+    'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
+}
+```
+
+Managing your user agents will improve your scrapers reliability, however, we also need to manage the IP addresses we use when scraping
+
+### Using Proxies to Bypass Anti-bots and CAPTCHA's
+
+IP address is our computers unique identifier on the internet.
+
+When a site sees to many requests coming from one IP Address/User Agent combination they usually limit/throttle the requests coming from that IP address. Most of the time this is to prevent things such as DDOS attacks or just to limit the amout of traffic to their site so that their servers don't run out of capacity.
+
+That is why we also will need to look at using proxies in combination with the random user agents to provide a much more reliable way of bypassing the restrictions placed on our spiders.
+
+#### Rotating IP Adresses with proxies
+
+Proxies are a gateway through which you route your scraping requests/traffic. As part of this routing process the IP address is updated to be the IP address of the gateway through which your scraping requests went through. 
+
+#### USing Free Proxies
+
+For most scraping jobs you are either better off relying on the rotating IPs of your VM provider or use a paid proxy service. This can cause security issues on our local machine.
+
+Proxies are a gateway through which you route your scraping requests/traffic. As part of this routing process the IP address is updated to be the IP address of the gateway through which your scraping requests went through. [GitHUb Repo](https://github.com/rejoiceinhope/scrapy-proxy-pool)
+
+Just like in for the User Agents middleware to enable this the scrapy_proxy_pool middleware we need to adding the following settings to our settings.py file:
+
+Installation
+
+```shell
+pip install scrapy_proxy_pool
+```
+
+```python
+PROXY_POOL_ENABLED = True
+```
+
+Then we need to add the scrapy_proxy_pool middlewares to our DOWNLOADER_MIDDLEWARES:
+
+```python
+DOWNLOADER_MIDDLEWARES = {
+    # ...
+    'scrapy_proxy_pool.middlewares.ProxyPoolMiddleware': 610,
+    'scrapy_proxy_pool.middlewares.BanDetectionMiddleware': 620,
+    # ...
+}
+```
+
+#### Using Paid Proxies
+
+There are many professional proxy services available that provide much higher quality of proxies that ensure almost all the requests you send via their proxies will reach the site you intend to scrape.
+
+##### Integrating ScraperAPI
+
+We can make a free account [here](https://www.scraperapi.com/?fp_ref=scrapeops)
+
+We simply intergrate our API key like this in our chocolate spider code:
+
+```python
+import scrapy
+from chocolatescraper.itemloaders import ChocolateProductLoader
+from chocolatescraper.items import ChocolateProduct  
+from urllib.parse import urlencode
+ 
+API_KEY = 'YOUR_API_KEY'
+
+#################################################
+def get_proxy_url(url):
+    payload = {'api_key': API_KEY, 'url': url}
+    proxy_url = 'http://api.scraperapi.com/?' + urlencode(payload)
+    return proxy_url
+#################################################
+
+class ChocolateSpider(scrapy.Spider):
+
+   # The name of the spider
+   name = 'chocolatespider'
+
+   # These are the urls that we will start scraping
+   #################################################
+   def start_requests(self):
+        start_url = 'https://www.chocolate.co.uk/collections/all'
+        yield scrapy.Request(url=get_proxy_url(start_url), callback=self.parse)
+    ###############################################
+
+
+   def parse(self, response):
+       products = response.css('product-item')
+
+       for product in products:
+            chocolate = ChocolateProductLoader(item=ChocolateProduct(), selector=product)
+            chocolate.add_css('name', "a.product-item-meta__title::text")
+            chocolate.add_css('price', 'span.price', re='<span class="price">\n              <span class="visually-hidden">Sale price</span>(.*)</span>')
+            chocolate.add_css('url', 'div.product-item-meta a::attr(href)')
+            yield chocolate.load_item()
+
+       next_page = response.css('[rel="next"] ::attr(href)').get()
+
+       if next_page is not None:
+           next_page_url = 'https://www.chocolate.co.uk' + next_page
+           yield response.follow(get_proxy_url(next_page_url), callback=self.parse)
+```
+
+We also need to block
+
+We also need to disable the open-source middle ware from before.
+
+```python
+CONCURRENT_REQUESTS = 5
+
+DOWNLOADER_MIDDLEWARES = {
+
+    ## Rotating User Agents
+    # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
+    # 'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
+
+    ## Rotating Free Proxies
+    # 'scrapy_proxy_pool.middlewares.ProxyPoolMiddleware': 610,
+    # 'scrapy_proxy_pool.middlewares.BanDetectionMiddleware': 620,
+}
+```
+
+
+
+
 
 
 

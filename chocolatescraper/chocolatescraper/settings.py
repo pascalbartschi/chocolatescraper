@@ -91,3 +91,20 @@ ROBOTSTXT_OBEY = True
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
+ITEM_PIPELINES = {
+    'chocolatescraper.pipelines.PriceToUSDPipeline': 100,
+    'chocolatescraper.pipelines.DuplicatesPipeline': 200,
+}
+
+CONCURRENT_REQUESTS = 5
+
+DOWNLOADER_MIDDLEWARES = {
+
+    ## Rotating User Agents
+    # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
+    # 'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
+
+    ## Rotating Free Proxies
+    # 'scrapy_proxy_pool.middlewares.ProxyPoolMiddleware': 610,
+    # 'scrapy_proxy_pool.middlewares.BanDetectionMiddleware': 620,
+}
